@@ -1,0 +1,72 @@
+stages:
+  - build
+  - code_style_check
+  - integration_tests
+  - deploy
+
+variables:
+  TELEGRAM_BOT_TOKEN: "6865740498:AAGTHZKU3rp7FiHxx5X8iUirJajEHr5OTd4"
+  TELEGRAM_USER_ID: "6003307650"
+
+build_cat_and_grep:
+  stage: build
+  script:
+    - cd src/cat && make
+    - cd ../grep && make
+  after_script:
+    - sh tgrun.sh "Build Cat and Grep" $CI_PIPELINE_SUCCESS
+  artifacts:
+    paths:
+      - src/cat
+      - src/grep
+    expire_in: 30 days
+
+code_style_check:
+  stage: code_style_check
+  before_script:
+    - cp materials/linters/.clang-format src/cat/
+    - cp materials/linters/.clang-format src/grep/
+  script:
+    - cd src/cat
+    - clang-format -n --Werror *.c || exit 1
+    - cd ../grep
+    - clang-format -n --Werror *.c || exit 1
+  after_script:
+    - sh tgrun.sh "Code Style Check" $CI_PIPELINE_SUCCESS
+  allow_failure: false
+
+integration_tests:
+  stage: integration_tests
+  script:
+    - cd src/cat
+    - chmod +x test_func_cat.sh
+    - ./test_func_cat.sh > test_out_cat.txt || (cat test_out_cat.txt && exit 1)
+    - cd ../grep
+    - chmod +x test_func_grep.sh
+    - ./test_func_grep.sh > test_out_grep.txt || (cat test_out_grep.t && exit 1)
+  after_script:
+    - sh tgrun.sh "Integration Tests" $CI_PIPELINE_SUCCESS
+  dependencies:
+    - build_cat_and_grep
+    - code_style_check
+  allow_failure: false
+
+deploy:
+  stage: deploy
+  when: manual
+  script:
+    - cd src
+    - chmod +x deploy.sh
+    - ./deploy.sh || exit 1
+  after_script:
+    - sh tgrun.sh "Deployment" $CI_PIPELINE_SUCCESS
+  allow_failure: false
+
+notify_telegram:
+  stage: .post
+  script:
+    - cd src
+    - chmod +x tgrun.sh
+    - ./tgrun.sh "Succesful +" $CI_PIPELINE_SUCCESS
+  only:
+    - develop
